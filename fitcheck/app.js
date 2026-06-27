@@ -20,7 +20,11 @@ const state = {
   // 배틀 모드 관련 상태값
   isBattleMode: false,
   opponentScore: 0,
-  opponentTpo: '일상'
+  opponentTpo: '일상',
+
+  // 무신사 연계 팝업용 임시 보관 상태
+  targetMusinsaUrl: '',
+  targetMusinsaItem: '독일군 스니커즈'
 };
 
 // 2. DOM 요소 셀렉터
@@ -89,7 +93,14 @@ const dom = {
   vsOppScore: document.getElementById('vs-opp-score'),
   vsOppTier: document.getElementById('vs-opp-tier'),
   resultHeaderBadge: document.getElementById('result-header-badge'),
-  resultTopOverlayBadge: document.getElementById('result-top-overlay-badge')
+  resultTopOverlayBadge: document.getElementById('result-top-overlay-badge'),
+  
+  // 무신사 연동 모달 관련 DOM
+  musinsaRedirectModal: document.getElementById('musinsa-redirect-modal'),
+  btnCloseMusinsaModal: document.getElementById('btn-close-musinsa-modal'),
+  btnCloseMusinsaModalCancel: document.getElementById('btn-close-musinsa-modal-cancel'),
+  btnConfirmMusinsaRedirect: document.getElementById('btn-confirm-musinsa-redirect'),
+  musinsaItemName: document.getElementById('musinsa-item-name')
 };
 
 // ========================================================
@@ -190,6 +201,35 @@ function bindEvents() {
   }
   if (dom.btnOpenInstagramApp) {
     dom.btnOpenInstagramApp.addEventListener('click', openInstagramApp);
+  }
+
+  // 11. 무신사 리다이렉션 컨펌 모달 연동
+  if (dom.linkShopping) {
+    dom.linkShopping.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (dom.musinsaItemName) {
+        dom.musinsaItemName.textContent = state.targetMusinsaItem;
+      }
+      if (dom.musinsaRedirectModal) {
+        dom.musinsaRedirectModal.classList.remove('hidden');
+      }
+    });
+  }
+  if (dom.btnCloseMusinsaModal) {
+    dom.btnCloseMusinsaModal.addEventListener('click', () => {
+      dom.musinsaRedirectModal.classList.add('hidden');
+    });
+  }
+  if (dom.btnCloseMusinsaModalCancel) {
+    dom.btnCloseMusinsaModalCancel.addEventListener('click', () => {
+      dom.musinsaRedirectModal.classList.add('hidden');
+    });
+  }
+  if (dom.btnConfirmMusinsaRedirect) {
+    dom.btnConfirmMusinsaRedirect.addEventListener('click', () => {
+      window.open(state.targetMusinsaUrl, '_blank');
+      dom.musinsaRedirectModal.classList.add('hidden');
+    });
   }
 }
 
@@ -411,7 +451,9 @@ function showPinTooltip(type) {
     let query = "독일군+스니커즈";
 
     dom.tooltipContent.textContent = comment;
-    dom.linkShopping.href = `https://www.musinsa.com/search/goods?keyword=${query}`;
+    state.targetMusinsaItem = "독일군 스니커즈";
+    state.targetMusinsaUrl = `https://www.musinsa.com/search/goods?keyword=${query}`;
+    dom.linkShopping.href = "#";
     
     // Devil 쇼핑몰 이동 및 추천 코디 버튼 활성화
     dom.linkShopping.classList.remove('hidden');
@@ -438,9 +480,8 @@ function applyStyleAdvice() {
   dom.stylePatchedBadge.classList.remove('hidden');
   playSound('upgrade');
 
-  // 2. 핀 마커 변경 (😈 -> 😇 로 구원 완료)
-  dom.pinDevil.querySelector('span').textContent = "😇";
-  dom.pinDevil.className = "absolute bg-secondary border-[3px] border-black rounded-full p-2.5 neo-shadow z-20 cursor-pointer text-2xl w-12 h-12 flex items-center justify-center";
+  // 2. 핀 마커 숨기기 (코디 보완 패치 적용 시 중복 마커 클러터 방지)
+  dom.pinDevil.classList.add('hidden');
   
   // 3. 사진 위에 가상 장착 스티커 박스 붙이기
   const recommendItemName = "독일군 스니커즈";
@@ -457,6 +498,13 @@ function applyStyleAdvice() {
     </div>
   `;
   dom.virtualStickerOverlay.classList.remove('hidden');
+
+  // 클릭 인터랙션 추가 (구원된 핀 대신 스티커가 세부설명 응답)
+  dom.virtualStickerOverlay.style.cursor = "pointer";
+  dom.virtualStickerOverlay.onclick = () => {
+    showToast("🎉 코디 개선 완료! 독일군 스니커즈 가상 대체 장착 (+1,500점)");
+    playSound('select');
+  };
 
   // 4. 점수 카운트업 실행 (+1,500점)
   let currentVal = state.score;
@@ -757,6 +805,12 @@ function resetToUploadScreen() {
   state.currentOotdImage = null;
   state.score = 0;
   state.isPatched = false;
+  
+  // 핀 복원 및 클릭 리스너 청소
+  dom.pinDevil.classList.remove('hidden');
+  dom.pinDevil.querySelector('span').textContent = "😈";
+  dom.pinDevil.className = "absolute bg-error-container border-[3px] border-black rounded-full p-2.5 neo-shadow hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none active:translate-x-[4px] active:translate-y-[4px] active:shadow-none z-20 cursor-pointer text-2xl transition-all flex items-center justify-center w-12 h-12 group gap-1";
+  dom.virtualStickerOverlay.onclick = null;
   
   // 배틀 상태 해제 및 URL 클리닝
   if (state.isBattleMode) {
