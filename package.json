@@ -5,7 +5,7 @@
   "main": "index.html",
   "scripts": {
     "dev": "vite --host",
-    "build": "vite build",
+    "build": "npm install --prefix fitcheck && npm run build --prefix fitcheck",
     "preview": "vite preview"
   },
   "devDependencies": {
