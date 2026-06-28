@@ -24,7 +24,10 @@ const state = {
 
   // 무신사 연계 팝업용 임시 보관 상태
   targetMusinsaUrl: '',
-  targetMusinsaItem: '독일군 스니커즈'
+  targetMusinsaItem: '독일군 스니커즈',
+
+  // AI API 결과 임시 보관
+  apiData: null
 };
 
 // 2. DOM 요소 셀렉터
@@ -282,6 +285,145 @@ function handleCustomFileUpload(e) {
   reader.readAsDataURL(file);
 }
 
+// API 호출 및 다중 폴백 로직
+async function callAnalyzeAPI(imageBase64, tpo) {
+  // 1단계: Cloudflare Pages Serverless Proxy (/api/analyze) 호출 시도
+  try {
+    const response = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        imageBase64,
+        tpo,
+        model: 'gemini-3.1-flash-lite'
+      })
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      return data;
+    }
+    
+    throw new Error(`Proxy status: ${response.status}`);
+  } catch (err) {
+    console.warn("Serverless proxy call failed or not found, trying local client fallback...", err);
+  }
+
+  // 2단계: 로컬 개발 환경용 클라이언트 직접 호출 (Vite VITE_GEMINI_API_KEY 변수 사용)
+  const localApiKey = import.meta.env.VITE_GEMINI_API_KEY;
+  if (localApiKey) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite:generateContent?key=${localApiKey}`;
+      
+      const base64Parts = imageBase64.split(',');
+      const base64Data = base64Parts[1];
+      const mimeType = base64Parts[0].split(';')[0].split(':')[1];
+      
+      const prompt = `
+당신은 트렌디하고 위트 있으며 뼈 때리는 패션 비평가인 'FitCheck 마스터'입니다.
+사용자가 제출한 OOTD 사진과 상황(TPO)을 바탕으로 패션력을 평가하고 JSON 형식으로 응답해 주세요.
+
+[TPO 상황]
+${tpo}
+
+[분석 및 응답 기준]
+1. 패션력 점수(score): 0 ~ 10,000점 범위로 정수로만 평가해 주세요.
+2. 티어(tier): 점수에 따라 다음 5개 중 정확히 매칭되는 티어 텍스트를 할당해 주세요.
+   - 9000점 이상: "패션 챌린저"
+   - 7500점 이상 9000점 미만: "다이아몬드"
+   - 6000점 이상 7500점 미만: "골드"
+   - 4000점 이상 6000점 미만: "실버"
+   - 4000점 미만: "아이언"
+3. 한줄평(roast): 점수와 상황(TPO)에 어울리는 위트 있고 직설적인 한줄평 (100~150자 내외). 점수가 낮을수록 뼈 때리는 매운맛(savage roast)이어야 하고, 높을수록 힙하고 시크한 칭찬이어야 합니다. 반드시 150자를 넘지 않도록 간결하게 끝내주세요.
+4. 베스트 매치(bestMatch):
+   - name: 착장에서 가장 조화롭고 잘 어울리는 특정 아이템/부위에 대한 설명 (예: "와이드 카키 데님 팬츠: 루즈한 상의 핏과 완벽한 톤온톤 매치")
+   - x: 해당 부위의 이미지 상 가로 위치 백분율 (0~100 사이 정수값)
+   - y: 해당 부위의 이미지 상 세로 위치 백분율 (0~100 사이 정수값)
+5. 워스트 매치(worstMatch):
+   - name: 착장에서 가장 어색하거나 교체하고 싶은 특정 아이템/부위에 대한 지적 및 코디 보완 설명 (예: "투박한 회색 운동화: 전체적인 캐주얼 미니멀 무드에 찬물을 끼얹는 언밸런스. 심플한 독일군 스니커즈로 변경 추천")
+   - recommendItem: 대체 추천하는 단품 패션 아이템 이름 (예: "독일군 스니커즈"). 이 추천 명칭은 무신사 쇼핑몰에서 상품 검색이 바로 가능한 직관적인 한글 명사여야 합니다.
+   - x: 해당 부위의 이미지 상 가로 위치 백분율 (0~100 사이 정수값)
+   - y: 해당 부위의 이미지 상 세로 위치 백분율 (0~100 사이 정수값)
+6. 무신사 검색어(musinsaQuery): worstMatch.recommendItem과 매치되는 검색용 핵심 단어 (예: "독일군 스니커즈")
+7. 상세 스탯(stats): 선택된 TPO 상황에 맞춰 지정된 5개 스탯 항목들의 개별 점수(0~100 사이 정수)를 매겨 주세요. 스탯 항목 이름(Key)은 반드시 오타 없이 아래에 정의된 5개 이름 그대로 사용해야 합니다.
+
+[상황별 스탯 정의 (반드시 해당하는 TPO의 Key 이름을 매핑해 주세요)]
+- 일상: {"색상 불협화음 🎨": 점수, "안구 보호도 👁️": 점수, "근자감 농도 ⚡": 점수, "지갑 방어력 💸": 점수, "마실 적합도 ☕": 점수}
+- 데이트: {"설렘 유발 지수 💘": 점수, "과도한 격식도 🕴️": 점수, "센스 스포일러 🕶️": 점수, "호감도 파괴력 💔": 점수, "데이트 생존율 🧬": 점수}
+- 출근: {"부장님 눈총 지수 😒": 점수, "프로페셔널 지수 💼": 점수, "활동성 방해율 🏃": 점수, "퇴근 본능 자극도 ⏰": 점수, "평판 수호 지수 🛡️": 점수}
+- 운동: {"헬창 아우라 지수 🏋️": 점수, "거울 셀카 득표율 📸": 점수, "땀 배출 지연도 💦": 점수, "신체 보정 치트 📐": 점수, "근손실 위장도 🧬": 점수}
+- 하객: {"신부 저격 민폐도 🏹": 점수, "하객 격식 비율 🤝": 점수, "사진 생존율 📸": 점수, "피로연 프리패스 🍽️": 점수, "친척 잔소리 실드 🛡️": 점수}
+
+반드시 백틱(\`\`\`)이나 마크다운 마크업 없는 순수한 JSON 객체 형식으로만 응답해야 하며, 다음 JSON 스키마를 완벽히 준수해야 합니다:
+{
+  "score": number,
+  "tier": string,
+  "roast": string,
+  "bestMatch": {
+    "name": string,
+    "x": number,
+    "y": number
+  },
+  "worstMatch": {
+    "name": string,
+    "recommendItem": string,
+    "x": number,
+    "y": number
+  },
+  "musinsaQuery": string,
+  "stats": {
+    "키이름1": number,
+    "키이름2": number,
+    "키이름3": number,
+    "키이름4": number,
+    "키이름5": number
+  }
+}
+`;
+
+      const requestBody = {
+        contents: [
+          {
+            parts: [
+              { text: prompt },
+              {
+                inlineData: {
+                  mimeType: mimeType,
+                  data: base64Data
+                }
+              }
+            ]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: "application/json"
+        }
+      };
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (response.ok) {
+        const json = await response.json();
+        const text = json.candidates[0].content.parts[0].text;
+        return JSON.parse(text.trim());
+      }
+      throw new Error(`Direct call status: ${response.status}`);
+    } catch (err) {
+      console.error("Direct client API call failed:", err);
+    }
+  }
+
+  throw new Error("No API connection succeeded.");
+}
+
 // 2단계: 로딩 스캔 진행 시뮬레이션
 function startScanningSequence() {
   dom.btnSubmitScan.disabled = true;
@@ -321,23 +463,59 @@ function startScanningSequence() {
   // 2.4초간 400ms 간격으로 상태 메시지와 프로그레스바 증가
   const interval = setInterval(() => {
     currentStep++;
-    if (currentStep < loadingTexts.length) {
+    if (currentStep < loadingTexts.length - 1) { // 마지막 완료 멘트 전까지
       dom.loadingStatusText.textContent = loadingTexts[currentStep];
       dom.loadingProgressFill.style.width = `${15 + (currentStep * 17)}%`;
       playSound('beep');
     }
   }, 400);
 
+  // API 호출 시작
+  let apiFailed = false;
+  let apiResolved = false;
+  
+  callAnalyzeAPI(state.currentOotdImage, state.selectedTpo)
+    .then(data => {
+      state.apiData = data;
+      apiResolved = true;
+    })
+    .catch(err => {
+      console.warn("API fallback to mock active.", err);
+      state.apiData = null;
+      apiFailed = true;
+      apiResolved = true;
+    });
+
+  // 최소 2.4초 대기 후 API 상태 체크 및 화면 전환
   setTimeout(() => {
     clearInterval(interval);
-    dom.loadingProgressFill.style.width = "100%";
-    setTimeout(() => {
-      // 분석 결과창 연산 및 이동
-      calculateFashionResults();
-      dom.screenLoading.classList.remove('active-screen');
-      dom.screenResult.classList.add('active-screen');
-      playSound('success');
-    }, 200);
+    
+    const checkCompletion = setInterval(() => {
+      if (apiResolved) {
+        clearInterval(checkCompletion);
+        
+        if (apiFailed) {
+          showToast("AI 분석 실패 🚨 임시 결과로 대체합니다.");
+        } else {
+          showToast("AI 분석 완료! 🎯");
+        }
+        
+        dom.loadingStatusText.textContent = loadingTexts[loadingTexts.length - 1]; // "스캔 보고서 연성 완료!"
+        dom.loadingProgressFill.style.width = "100%";
+        
+        setTimeout(() => {
+          // 분석 결과창 연산 및 이동
+          calculateFashionResults();
+          dom.screenLoading.classList.remove('active-screen');
+          dom.screenResult.classList.add('active-screen');
+          playSound('success');
+        }, 300);
+      } else {
+        // 아직 대기 중인 경우 대기 안내 문구 노출 및 펄스 효과
+        dom.loadingStatusText.textContent = "AI의 깊이 있는 패션 훈수를 대기 중...";
+        dom.loadingProgressFill.style.width = "95%";
+      }
+    }, 100);
   }, 2400);
 }
 
@@ -347,16 +525,40 @@ function calculateFashionResults() {
   dom.stylePatchedBadge.classList.add('hidden');
   dom.virtualStickerOverlay.classList.add('hidden');
 
-  // 커스텀 이미지 기반 반영 (파일 길이에 대입해 고유한 시드 추출)
-  const seed = state.currentOotdImage ? state.currentOotdImage.length : 12345;
-  let baseScore = 4000 + (seed % 4800); // 4000 ~ 8800 점
+  if (state.apiData) {
+    // API 분석 결과 반영
+    state.score = state.apiData.score;
+    state.originalScore = state.apiData.score;
+    state.tier = state.apiData.tier;
+    state.bestMatch = state.apiData.bestMatch;
+    state.worstMatch = state.apiData.worstMatch;
+    state.musinsaQuery = state.apiData.musinsaQuery;
+    state.targetMusinsaItem = state.apiData.worstMatch ? state.apiData.worstMatch.recommendItem : "독일군 스니커즈";
+    
+    // 스탯 매핑 및 originalVal 기록
+    state.stats = Object.entries(state.apiData.stats || {}).map(([name, val]) => ({
+      name,
+      val: val,
+      originalVal: val
+    }));
+  } else {
+    // API 실패 혹은 없을 시 mock 데이터 폴백 복구
+    const seed = state.currentOotdImage ? state.currentOotdImage.length : 12345;
+    let baseScore = 4000 + (seed % 4800); // 4000 ~ 8800 점
+    baseScore += getRandomOffset(-200, 200);
+    baseScore = Math.max(1800, Math.min(9850, baseScore));
 
-  // 상황에 따른 난수 추가 반영 (TPO 보정)
-  baseScore += getRandomOffset(-200, 200);
-  baseScore = Math.max(1800, Math.min(9850, baseScore)); // 최대 점수 제한
+    state.score = baseScore;
+    state.originalScore = baseScore;
+    state.tier = calculateTier(state.score);
 
-  state.score = baseScore;
-  state.originalScore = baseScore;
+    state.bestMatch = { name: "전반적으로 핏의 실루엣 조합과 상체 라인 조화가 우수합니다! 😇", x: 60, y: 35 };
+    state.worstMatch = { name: "하반신의 슈즈 매치가 코디 전체의 매력을 해치고 있습니다. 베이직한 독일군 스니커즈로 변경을 강력 추천합니다. 😈", recommendItem: "독일군 스니커즈", x: 40, y: 75 };
+    state.musinsaQuery = "독일군 스니커즈";
+    state.targetMusinsaItem = "독일군 스니커즈";
+    
+    state.stats = []; // renderVibeStats에서 기존 Mock으로 재정의
+  }
 
   // 비주얼 이미지 및 배틀 레이아웃 세팅
   if (state.isBattleMode) {
@@ -419,8 +621,15 @@ function setupPins() {
   dom.feedbackTooltip.classList.add('hidden');
   
   // 임포트한 커스텀 이미지 위의 범용 OOTD 좌표 핀 세팅
-  const angelPos = { top: 35, left: 60 };
-  const devilPos = { top: 75, left: 40 };
+  let angelPos = { top: 35, left: 60 };
+  let devilPos = { top: 75, left: 40 };
+
+  if (state.bestMatch && typeof state.bestMatch.x === 'number' && typeof state.bestMatch.y === 'number') {
+    angelPos = { top: state.bestMatch.y, left: state.bestMatch.x };
+  }
+  if (state.worstMatch && typeof state.worstMatch.x === 'number' && typeof state.worstMatch.y === 'number') {
+    devilPos = { top: state.worstMatch.y, left: state.worstMatch.x };
+  }
 
   // 핀 DOM 위치 적용
   dom.pinAngel.style.top = `${angelPos.top}%`;
@@ -429,6 +638,7 @@ function setupPins() {
   dom.pinDevil.style.left = `${devilPos.left}%`;
 
   // 핀 복원 (Devil 핀 리셋)
+  dom.pinDevil.classList.remove('hidden');
   dom.pinDevil.querySelector('span').textContent = "😈";
   dom.pinDevil.className = "absolute bg-error-container border-[3px] border-black rounded-full p-2.5 neo-shadow hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none active:translate-x-[4px] active:translate-y-[4px] active:shadow-none z-20 cursor-pointer text-2xl transition-all flex items-center justify-center w-12 h-12 group gap-1";
 }
@@ -445,7 +655,7 @@ function showPinTooltip(type) {
 
     dom.tooltipTitle.textContent = "😇 BEST MATCH";
     dom.tooltipTitle.className = "font-headline font-black text-xs uppercase px-2 py-0.5 border-[2px] border-black bg-secondary text-black";
-    dom.tooltipContent.textContent = "전반적으로 핏의 실루엣 조합과 상체 라인 조화가 우수합니다! 😇";
+    dom.tooltipContent.textContent = state.bestMatch ? state.bestMatch.name : "전반적으로 핏의 실루엣 조합과 상체 라인 조화가 우수합니다! 😇";
     
     // Angel은 쇼핑몰 추천 및 코디적용 숨김
     dom.linkShopping.classList.add('hidden');
@@ -458,11 +668,11 @@ function showPinTooltip(type) {
     dom.tooltipTitle.textContent = "😈 WORST MATCH";
     dom.tooltipTitle.className = "font-headline font-black text-xs uppercase px-2 py-0.5 border-[2px] border-black bg-error-container text-black";
     
-    let comment = "하반신의 슈즈 매치가 코디 전체의 매력을 해치고 있습니다. 베이직한 독일군 스니커즈로 변경을 강력 추천합니다. 😈";
-    let query = "독일군+스니커즈";
+    let comment = state.worstMatch ? state.worstMatch.name : "하반신의 슈즈 매치가 코디 전체의 매력을 해치고 있습니다. 베이직한 독일군 스니커즈로 변경을 강력 추천합니다. 😈";
+    let query = state.musinsaQuery ? encodeURIComponent(state.musinsaQuery) : "독일군+스니커즈";
 
     dom.tooltipContent.textContent = comment;
-    state.targetMusinsaItem = "독일군 스니커즈";
+    state.targetMusinsaItem = state.worstMatch ? state.worstMatch.recommendItem : "독일군 스니커즈";
     state.targetMusinsaUrl = `https://www.musinsa.com/search/goods?keyword=${query}`;
     dom.linkShopping.href = "#";
     
@@ -506,8 +716,12 @@ function applyStyleAdvice() {
   dom.pinDevil.classList.add('hidden');
   
   // 3. 사진 위에 가상 장착 스티커 박스 붙이기
-  const recommendItemName = "독일군 스니커즈";
-  const pos = { top: 72, left: 33 };
+  const recommendItemName = state.targetMusinsaItem || "독일군 스니커즈";
+  let pos = { top: 72, left: 33 };
+  if (state.worstMatch && typeof state.worstMatch.x === 'number' && typeof state.worstMatch.y === 'number') {
+    pos.top = Math.min(90, Math.max(10, state.worstMatch.y - 3));
+    pos.left = Math.min(90, Math.max(10, state.worstMatch.x - 7));
+  }
 
   // 스티커 위치 잡고 보이기 (Neo-Brutalist 스티커 스타일)
   dom.virtualStickerOverlay.style.top = `${pos.top}%`;
@@ -524,7 +738,7 @@ function applyStyleAdvice() {
   // 클릭 인터랙션 추가 (구원된 핀 대신 스티커가 세부설명 응답)
   dom.virtualStickerOverlay.style.cursor = "pointer";
   dom.virtualStickerOverlay.onclick = () => {
-    showToast("🎉 코디 개선 완료! 독일군 스니커즈 가상 대체 장착 (+1,500점)");
+    showToast(`🎉 코디 개선 완료! ${recommendItemName} 가상 대체 장착 (+1,500점)`);
     playSound('select');
   };
 
@@ -549,7 +763,7 @@ function applyStyleAdvice() {
       dom.resultTopOverlayTag.textContent = "UPGRADE 완료";
       
       // 로스트 텍스트 격려 멘트로 변경
-      dom.resultRoastText.textContent = "🎉 훌륭합니다! 워스트 부위를 트렌디한 아이템으로 코디 대체하자마자 착장 밸런스가 한층 안정되었습니다. 안구 정화 완료! 😎";
+      dom.resultRoastText.textContent = `🎉 훌륭합니다! 워스트 부위를 트렌디한 ${recommendItemName}(으)로 코디 대체하자마자 착장 밸런스가 한층 안정되었습니다. 안구 정화 완료! 😎`;
       
       // 스탯 갱신
       renderVibeStats();
@@ -666,54 +880,56 @@ const statDescriptions = {
 // 상황별 스탯 데이터 생성 및 렌더링
 function renderVibeStats() {
   const tpo = state.selectedTpo;
-  const score = state.score;
   
-  // 5대 스탯 사양 맵 정의
-  const statsMapping = {
-    '일상': [
-      { name: '색상 불협화음 🎨', val: getMutedStatVal(100 - (score/105), 15, 95) },
-      { name: '안구 보호도 👁️', val: getMutedStatVal(score/100, 20, 99) },
-      { name: '근자감 농도 ⚡', val: getMutedStatVal(45 + (score/200), 30, 98) },
-      { name: '지갑 방어력 💸', val: getMutedStatVal(100 - (score/120), 10, 95) },
-      { name: '마실 적합도 ☕', val: getMutedStatVal(score/100 - 5, 20, 98) }
-    ],
-    '데이트': [
-      { name: '설렘 유발 지수 💘', val: getMutedStatVal(score/95, 25, 99) },
-      { name: '과도한 격식도 🕴️', val: getMutedStatVal(110 - (score/100), 10, 90) },
-      { name: '센스 스포일러 🕶️', val: getMutedStatVal(score/102, 15, 98) },
-      { name: '호감도 파괴력 💔', val: getMutedStatVal(100 - (score/100), 5, 95) },
-      { name: '데이트 생존율 🧬', val: getMutedStatVal(score/98, 20, 99) }
-    ],
-    '출근': [
-      { name: '부장님 눈총 지수 😒', val: getMutedStatVal(105 - (score/98), 10, 95) },
-      { name: '프로페셔널 지수 💼', val: getMutedStatVal(score/100, 20, 98) },
-      { name: '활동성 방해율 🏃', val: getMutedStatVal(100 - (score/110), 15, 90) },
-      { name: '퇴근 본능 자극도 ⏰', val: getMutedStatVal(40 + (score/200), 20, 98) },
-      { name: '평판 수호 지수 🛡️', val: getMutedStatVal(score/100 + 5, 30, 99) }
-    ],
-    '운동': [
-      { name: '헬창 아우라 지수 🏋️', val: getMutedStatVal(score/100, 15, 98) },
-      { name: '거울 셀카 득표율 📸', val: getMutedStatVal(score/95, 10, 99) },
-      { name: '땀 배출 지연도 💦', val: getMutedStatVal(100 - (score/105), 10, 90) },
-      { name: '신체 보정 치트 📐', val: getMutedStatVal(score/100 + 8, 25, 99) },
-      { name: '근손실 위장도 🧬', val: getMutedStatVal(score/98, 30, 98) }
-    ],
-    '하객': [
-      { name: '신부 저격 민폐도 🏹', val: getMutedStatVal(100 - (score/100), 5, 95) },
-      { name: '하객 격식 비율 🤝', val: getMutedStatVal(score/98, 30, 99) },
-      { name: '사진 생존율 📸', val: getMutedStatVal(score/102, 20, 98) },
-      { name: '피로연 프리패스 🍽️', val: getMutedStatVal(90 - (score/200), 40, 99) },
-      { name: '친척 잔소리 실드 🛡️', val: getMutedStatVal(score/100 + 10, 20, 99) }
-    ]
-  };
-
-  // 현재 TPO 스탯 추출 후 바인딩
-  const currentStats = statsMapping[tpo] || statsMapping['일상'];
-  state.stats = currentStats;
+  if (!state.apiData) {
+    const statsMapping = {
+      '일상': [
+        { name: '색상 불협화음 🎨', val: getMutedStatVal(100 - (state.score/105), 15, 95), originalVal: Math.floor(100 - (state.originalScore/105)) },
+        { name: '안구 보호도 👁️', val: getMutedStatVal(state.score/100, 20, 99), originalVal: Math.floor(state.originalScore/100) },
+        { name: '근자감 농도 ⚡', val: getMutedStatVal(45 + (state.score/200), 30, 98), originalVal: Math.floor(45 + (state.originalScore/200)) },
+        { name: '지갑 방어력 💸', val: getMutedStatVal(100 - (state.score/120), 10, 95), originalVal: Math.floor(100 - (state.originalScore/120)) },
+        { name: '마실 적합도 ☕', val: getMutedStatVal(state.score/100 - 5, 20, 98), originalVal: Math.floor(state.originalScore/100 - 5) }
+      ],
+      '데이트': [
+        { name: '설렘 유발 지수 💘', val: getMutedStatVal(state.score/95, 25, 99), originalVal: Math.floor(state.originalScore/95) },
+        { name: '과도한 격식도 🕴️', val: getMutedStatVal(110 - (state.score/100), 10, 90), originalVal: Math.floor(110 - (state.originalScore/100)) },
+        { name: '센스 스포일러 🕶️', val: getMutedStatVal(state.score/102, 15, 98), originalVal: Math.floor(state.originalScore/102) },
+        { name: '호감도 파괴력 💔', val: getMutedStatVal(100 - (state.score/100), 5, 95), originalVal: Math.floor(100 - (state.originalScore/100)) },
+        { name: '데이트 생존율 🧬', val: getMutedStatVal(state.score/98, 20, 99), originalVal: Math.floor(state.originalScore/98) }
+      ],
+      '출근': [
+        { name: '부장님 눈총 지수 😒', val: getMutedStatVal(105 - (state.score/98), 10, 95), originalVal: Math.floor(105 - (state.originalScore/98)) },
+        { name: '프로페셔널 지수 💼', val: getMutedStatVal(state.score/100, 20, 98), originalVal: Math.floor(state.originalScore/100) },
+        { name: '활동성 방해율 🏃', val: getMutedStatVal(100 - (state.score/110), 15, 90), originalVal: Math.floor(100 - (state.originalScore/110)) },
+        { name: '퇴근 본능 자극도 ⏰', val: getMutedStatVal(40 + (state.score/200), 20, 98), originalVal: Math.floor(40 + (state.originalScore/200)) },
+        { name: '평판 수호 지수 🛡️', val: getMutedStatVal(state.score/100 + 5, 30, 99), originalVal: Math.floor(state.originalScore/100 + 5) }
+      ],
+      '운동': [
+        { name: '헬창 아우라 지수 🏋️', val: getMutedStatVal(state.score/100, 15, 98), originalVal: Math.floor(state.originalScore/100) },
+        { name: '거울 셀카 득표율 📸', val: getMutedStatVal(state.score/95, 10, 99), originalVal: Math.floor(state.originalScore/95) },
+        { name: '땀 배출 지연도 💦', val: getMutedStatVal(100 - (state.score/105), 10, 90), originalVal: Math.floor(100 - (state.originalScore/105)) },
+        { name: '신체 보정 치트 📐', val: getMutedStatVal(state.score/100 + 8, 25, 99), originalVal: Math.floor(state.originalScore/100 + 8) },
+        { name: '근손실 위장도 🧬', val: getMutedStatVal(state.score/98, 30, 98), originalVal: Math.floor(state.originalScore/98) }
+      ],
+      '하객': [
+        { name: '신부 저격 민폐도 🏹', val: getMutedStatVal(100 - (state.score/100), 5, 95), originalVal: Math.floor(100 - (state.originalScore/100)) },
+        { name: '하객 격식 비율 🤝', val: getMutedStatVal(state.score/98, 30, 99), originalVal: Math.floor(state.originalScore/98) },
+        { name: '사진 생존율 📸', val: getMutedStatVal(state.score/102, 20, 98), originalVal: Math.floor(state.originalScore/102) },
+        { name: '피로연 프리패스 🍽️', val: getMutedStatVal(90 - (state.score/200), 40, 99), originalVal: Math.floor(90 - (state.originalScore/200)) },
+        { name: '친척 잔소리 실드 🛡️', val: getMutedStatVal(state.score/100 + 10, 20, 99), originalVal: Math.floor(state.originalScore/100 + 10) }
+      ]
+    };
+    state.stats = statsMapping[tpo] || statsMapping['일상'];
+  } else {
+    // API 분석 결과가 있는 경우, getMutedStatVal을 호출하여 isPatched 상향 보정(+15) 적용
+    state.stats.forEach(stat => {
+      stat.val = getMutedStatVal(stat.originalVal, 0, 100);
+    });
+  }
 
   dom.statsContainer.innerHTML = '';
   
-  currentStats.forEach((stat, idx) => {
+  state.stats.forEach((stat, idx) => {
     // 5대 교차 컬러 배치 (Lavender, Mint, Peach, Cream, White)
     const colorClasses = ['bg-primary', 'bg-secondary', 'bg-tertiary', 'bg-cream', 'bg-white'];
     const barColor = colorClasses[idx % colorClasses.length];
@@ -827,6 +1043,7 @@ function resetToUploadScreen() {
   state.currentOotdImage = null;
   state.score = 0;
   state.isPatched = false;
+  state.apiData = null; // API 데이터 리셋
   
   // 핀 복원 및 클릭 리스너 청소
   dom.pinDevil.classList.remove('hidden');
