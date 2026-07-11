@@ -1,3 +1,5 @@
+const DEFAULT_GEMINI_ANALYSIS_MODEL = 'gemini-3.1-flash-lite';
+
 export async function onRequestPost(context) {
   try {
     const { request, env } = context;
@@ -10,7 +12,7 @@ export async function onRequestPost(context) {
     }
 
     const body = await request.json();
-    const { imageBase64, tpo, model } = body;
+    const { imageBase64, tpo } = body;
 
     if (!imageBase64 || !tpo) {
       return new Response(JSON.stringify({ error: "Missing required parameters (imageBase64, tpo)." }), {
@@ -19,7 +21,7 @@ export async function onRequestPost(context) {
       });
     }
 
-    const geminiModel = model || 'gemini-3.1-flash-lite';
+    const geminiModel = env.GEMINI_ANALYSIS_MODEL || DEFAULT_GEMINI_ANALYSIS_MODEL;
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
 
     const base64Parts = imageBase64.split(',');
