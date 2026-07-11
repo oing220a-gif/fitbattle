@@ -313,7 +313,10 @@ async function callAnalyzeAPI(imageBase64, tpo) {
 
   // 2단계: 로컬 개발 환경용 클라이언트 직접 호출 (Vite VITE_GEMINI_API_KEY 변수 사용)
   const localApiKey = import.meta.env.VITE_GEMINI_API_KEY;
-  const localAnalysisModel = import.meta.env.VITE_GEMINI_ANALYSIS_MODEL || 'gemini-3.1-flash-lite';
+  const localAnalysisModel =
+    import.meta.env.VITE_FITCHECK_ANALYSIS_MODEL ||
+    import.meta.env.VITE_GEMINI_ANALYSIS_MODEL ||
+    'gemini-3.1-flash-lite';
   if (localApiKey) {
     try {
       const url = `https://generativelanguage.googleapis.com/v1beta/models/${localAnalysisModel}:generateContent?key=${localApiKey}`;

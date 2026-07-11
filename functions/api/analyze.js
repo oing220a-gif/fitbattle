@@ -1,11 +1,13 @@
-const DEFAULT_GEMINI_ANALYSIS_MODEL = 'gemini-3.1-flash-lite';
+import { requireModelSecret, resolveModel } from "../_shared/model-registry.js";
 
 export async function onRequestPost(context) {
   try {
     const { request, env } = context;
-    const apiKey = env.GEMINI_API_KEY;
-    if (!apiKey) {
-      return new Response(JSON.stringify({ error: "Gemini API Key is not configured on the server." }), {
+    const analysisModel = resolveModel(env, "analysis");
+    requireModelSecret(env, analysisModel);
+
+    if (analysisModel.provider !== "gemini") {
+      return new Response(JSON.stringify({ error: `Unsupported analysis provider: ${analysisModel.provider}` }), {
         status: 500,
         headers: { "Content-Type": "application/json" }
       });
@@ -21,8 +23,8 @@ export async function onRequestPost(context) {
       });
     }
 
-    const geminiModel = env.GEMINI_ANALYSIS_MODEL || DEFAULT_GEMINI_ANALYSIS_MODEL;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${apiKey}`;
+    const apiKey = env[analysisModel.apiKeyEnv];
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${analysisModel.model}:generateContent?key=${apiKey}`;
 
     const base64Parts = imageBase64.split(',');
     const base64Data = base64Parts[1];
