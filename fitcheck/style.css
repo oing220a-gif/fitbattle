@@ -15,6 +15,24 @@ body {
   text-size-adjust: 100% !important;
 }
 
+/* Keep the style-remix dialog widths stable as its content changes. */
+.style-edit-dialog {
+  width: min(250px, calc(100vw - 4rem));
+}
+
+.style-edit-score-panel {
+  width: 100%;
+}
+
+/* Prevent proportional digits from shifting during the score count-up. */
+#style-edit-score {
+  display: inline-block;
+  width: 6ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+}
+
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Montserrat', sans-serif;
 }
