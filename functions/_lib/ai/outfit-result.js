@@ -40,6 +40,10 @@ export const OUTFIT_RESULT_SCHEMA = Object.freeze({
       type: 'object',
       additionalProperties: { type: 'integer', minimum: 0, maximum: 100 },
     },
+    statsDetails: {
+      type: 'object',
+      additionalProperties: { type: 'string' },
+    },
   },
   required: ['score', 'tier', 'roast', 'bestMatches', 'worstMatches', 'musinsaQuery', 'stats'],
 });
@@ -114,17 +118,22 @@ function normalizeOutfitResult(result) {
     cleanText(name),
     boundedInteger(value, 0, 100),
   ]));
+  const statsDetails = Object.fromEntries(Object.entries(result.statsDetails || {}).slice(0, 5).map(([name, desc]) => [
+    cleanText(name),
+    cleanText(desc),
+  ]));
 
   const worstMatches = worstSource.map((match) => normalizeMatch(match, true)).filter(Boolean).slice(0, 4);
   return {
     score: boundedInteger(result.score, 0, 10000),
     tier: cleanText(result.tier),
-    roast: cleanText(result.roast),
+    roast: cleanText(result.roast).slice(0, 150),
     bestMatches: bestSource.map((match) => normalizeMatch(match)).filter(Boolean).slice(0, 1),
     worstMatches: worstMatches.slice(0, 3),
     musinsaQuery: cleanText(result.musinsaQuery) || worstMatches[0]?.recommendItem || '',
     improvementSummary: cleanText(result.improvementSummary),
     stats,
+    statsDetails,
   };
 }
 
