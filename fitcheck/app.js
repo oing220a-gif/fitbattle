@@ -1214,8 +1214,10 @@ function renderResultDashboard() {
     if (dom.resultHeaderBadge) {
       dom.resultHeaderBadge.classList.add('hidden');
     }
-    dom.resultTopOverlayTag.textContent = state.score >= 7000 ? "VOGUE PASS" : "EMERGENCY";
-    dom.resultRoastText.textContent = getRoastComment(state.selectedTpo, state.score, state.isPatched);
+    const roast = (state.isPatched && state.apiData?.improvementSummary)
+      ? state.apiData.improvementSummary
+      : (state.apiData?.roast || getRoastComment(state.selectedTpo, state.score, state.isPatched));
+    dom.resultRoastText.textContent = roast;
   }
   
   // 스탯 렌더링
@@ -1374,38 +1376,38 @@ function restoreRecentCheck(record) {
   playSound('select');
 }
 
-// 스탯별 위트있는 상세 설명 데이터베이스
+// 스탯별 위트있는 상세 설명 데이터베이스 (긍정 훈수 딕셔너리)
 const statDescriptions = {
   // 일상
-  '색상 불협화음 🎨': "상/하의 색 조합이 보색 관계거나 채도가 너무 튀면 올라갑니다. 낮아야 눈이 편안해요.",
-  '안구 보호도 👁️': "당신의 패션이 주변 사람들의 시력을 얼마나 보호해 줬는지 나타내는 이타적인 지표입니다.",
-  '근자감 농도 ⚡': "이 옷을 입고 명동 벌판을 얼마나 뻔뻔하게 활보할 수 있는지 나타냅니다.",
-  '지갑 방어력 💸': "소비된 아이템들의 가성비 지수. SPA 위주면 90% 이상, 명품 믹스면 낮아집니다.",
-  '마실 적합도 ☕': "동네 메가커피나 편의점에 갈 때 지나치게 힘을 주지 않았는지 측정합니다.",
+  '컬러 하모니 🎨': "상·하의와 액세서리의 색상 조화도. 톤온톤 매치가 훌륭할수록 높아집니다.",
+  '안구 보호도 👁️': "주변 시력을 평화롭게 보존하고 눈부신 패션 아우라를 선사하는 미덕.",
+  '근자감 농도 ⚡': "근거 있는 스타일 자신감과 뻔뻔하고 당당한 패션 피플 모드.",
+  '지갑 방어력 💸': "비싼 명품 없이도 스타일리시하게 지갑을 지켜내는 가성비 지수.",
+  '마실 쾌적도 ☕': "집 앞 카페나 편의점에 갈 때 지나치게 힘주지 않은 힙한 편안함.",
   // 데이트
-  '설렘 유발 지수 💘': "첫눈에 호감을 사고 썸 탈 확률을 늘려주는 데이트 성공의 척도.",
-  '과도한 격식도 🕴️': "마치 면접 보러 온 것처럼 각 잡힌 무거운 룩인지 판독합니다. (낮아야 로맨틱)",
-  '센스 스포일러 🕶️': "악세서리, 양말 색 등 드러나지 않는 한 끗 차이의 디테일 센스.",
-  '호감도 파괴력 💔': "보는 이의 연애 세포를 잠재우는 끔찍한 단품 아이템의 존재율 (낮을수록 좋음).",
-  '데이트 생존율 🧬': "오늘 데이트 후 삼겹살 먹다 체하지 않고 다음 애프터에 성공할 시뮬레이션 지수.",
+  '설렘 유발 💘': "첫눈에 호감을 사며 상대방 심장을 심쿵하게 만드는 데이트 성공의 척도.",
+  '자연스런 핏 🌿': "부담스러운 각 잡힘 없이 훈훈하고 자연스러운 세련미 연출도.",
+  '센스 디테일 🕶️': "드러나지 않는 한 끗 차이의 디테일 패션 센스 지수.",
+  '애프터 확률 💌': "오늘 데이트 후 2차 카페/주점으로 직행하며 다음 약속을 잡을 확률.",
+  '데이트 생존 🧬': "오늘의 훈훈한 핏과 호감도가 만점일 시뮬레이션 지수.",
   // 출근
-  '부장님 눈총 지수 😒': "부장님의 등 뒤 레이저 가동률. 튀거나 성의 없어 보일수록 치솟습니다.",
-  '프로페셔널 지수 💼': "일은 기획서 마감 직전인데 패션만은 실리콘밸리 CEO 뺨치는 전문성 연출도.",
-  '활동성 방해율 🏃': "이 옷을 입고 하루 종일 엑셀 노가다와 탕비실 커피 배달이 가능한가에 대한 지표.",
-  '퇴근 본능 자극도 ⏰': "옷이 너무 불편하거나 너무 편해 당장 퇴근하고 싶어지는 본능 유도율.",
-  '평판 수호 지수 🛡️': "사내 복장 불량 지적을 방어하고 패셔니스타 평판을 지켜내는 방어율.",
+  '부장님 방어 🛡️': "단정하고 무난한 핏으로 사내 등 뒤 레이저 방어율.",
+  '프로 지수 💼': "실리콘밸리 CEO 뺨치는 전문성과 오피스 웨어 핏 연출도.",
+  '업무 쾌적도 ⚡': "하루 종일 엑셀 노가다와 탕비실 배달에도 상쾌한 쾌적도.",
+  '퇴근 칼퇴력 ⏰': "칼퇴근 요구 시 당당함과 사내 평판을 지키는 밸런스.",
+  '평판 수호력 🛡️': "사내 복장 불량 지적을 방어하고 패셔니스타 평판을 지켜내는 방어율.",
   // 운동
-  '헬창 아우라 지수 🏋️': "3대 운동 몇 치는지와 상관없이 헬스장 바닥을 지배하는 고수 느낌.",
-  '거울 셀카 득표율 📸': "오운완 해시태그 박아 올렸을 때 인스타 하트를 땡겨올 확률.",
-  '땀 배출 지연도 💦': "통풍이 전혀 안 되어 겨드랑이 홍수 폭발을 유발하는 기능성 상실율.",
-  '신체 보정 치트 📐': "어깨가 넓어 보이거나 다리가 길어 보이게 숨겨진 체형 사기 지수.",
-  '근손실 위장도 🧬': "핏 때문에 실제로 만든 근육마저 쪼그라들어 보이는 억울함 방어 지수.",
+  '헬창 아우라 🏋️': "3대 운동 몇 치는지와 상관없이 헬스장 바닥을 지배하는 고수 느낌.",
+  '거울셀카 득표 📸': "오운완 해시태그 박아 올렸을 때 인스타 하트를 땡겨올 확률.",
+  '통풍 쾌적도 🌬️': "상쾌하게 땀을 배출하고 체온을 유지하는 쾌적한 짐웨어 성능.",
+  '신체 보정 📐': "어깨가 넓어 보이거나 다리가 길어 보이게 숨겨진 체형 사기 지수.",
+  '근육 아우라 🧬': "핏으로 탄탄한 핏감과 비율을 살려주는 근육 보존 지수.",
   // 하객
-  '신부 저격 민폐도 🏹': "흰색 민폐룩이나 지나치게 화려하여 신랑 신부의 존재를 묻어버리는 지수.",
-  '하객 격식 비율 🤝': "결혼식을 축하하기 위해 나이와 자리에 알맞게 성의를 보인 척도.",
+  '하객 예의 🕊️': "신랑 신부의 존재감을 존중하고 차분하게 자리를 빛내는 하객의 미덕.",
+  '하객 격식 🤝': "결혼식을 축하하기 위해 나이와 자리에 알맞게 성의를 보인 척도.",
   '사진 생존율 📸': "맨 뒤 구석 단체 샷에서도 깔끔하게 존재감을 발휘하는 룩.",
-  '피로연 프리패스 🍽️': "식사 도중 바지 후크를 풀지 않고 피로연 뷔페 5접시를 채울 수 있는 신축성 지수.",
-  '친척 잔소리 실드 🛡️': "오랜만에 만난 친척들의 잔소리('결혼은 언제 하니')를 물리치는 단정함의 힘."
+  '피로연 프리 🍽️': "식사 도중 바지 후크를 풀지 않고 피로연 뷔페 5접시를 채울 수 있는 편안함.",
+  '잔소리 방어 🛡️': "친척들의 잔소리를 물리치는 단정함과 고급스러운 품격의 힘."
 };
 
 // 상황별 스탯 데이터 생성 및 렌더링
@@ -1415,39 +1417,39 @@ function renderVibeStats() {
   if (!state.apiData) {
     const statsMapping = {
       '일상': [
-        { name: '색상 불협화음 🎨', val: getMutedStatVal(100 - (state.score/105), 15, 95), originalVal: Math.floor(100 - (state.originalScore/105)) },
+        { name: '컬러 하모니 🎨', val: getMutedStatVal(state.score/100, 20, 99), originalVal: Math.floor(state.originalScore/100) },
         { name: '안구 보호도 👁️', val: getMutedStatVal(state.score/100, 20, 99), originalVal: Math.floor(state.originalScore/100) },
         { name: '근자감 농도 ⚡', val: getMutedStatVal(45 + (state.score/200), 30, 98), originalVal: Math.floor(45 + (state.originalScore/200)) },
         { name: '지갑 방어력 💸', val: getMutedStatVal(100 - (state.score/120), 10, 95), originalVal: Math.floor(100 - (state.originalScore/120)) },
-        { name: '마실 적합도 ☕', val: getMutedStatVal(state.score/100 - 5, 20, 98), originalVal: Math.floor(state.originalScore/100 - 5) }
+        { name: '마실 쾌적도 ☕', val: getMutedStatVal(state.score/100 - 5, 20, 98), originalVal: Math.floor(state.originalScore/100 - 5) }
       ],
       '데이트': [
-        { name: '설렘 유발 지수 💘', val: getMutedStatVal(state.score/95, 25, 99), originalVal: Math.floor(state.originalScore/95) },
-        { name: '과도한 격식도 🕴️', val: getMutedStatVal(110 - (state.score/100), 10, 90), originalVal: Math.floor(110 - (state.originalScore/100)) },
-        { name: '센스 스포일러 🕶️', val: getMutedStatVal(state.score/102, 15, 98), originalVal: Math.floor(state.originalScore/102) },
-        { name: '호감도 파괴력 💔', val: getMutedStatVal(100 - (state.score/100), 5, 95), originalVal: Math.floor(100 - (state.originalScore/100)) },
-        { name: '데이트 생존율 🧬', val: getMutedStatVal(state.score/98, 20, 99), originalVal: Math.floor(state.originalScore/98) }
+        { name: '설렘 유발 💘', val: getMutedStatVal(state.score/95, 25, 99), originalVal: Math.floor(state.originalScore/95) },
+        { name: '자연스런 핏 🌿', val: getMutedStatVal(state.score/100, 20, 98), originalVal: Math.floor(state.originalScore/100) },
+        { name: '센스 디테일 🕶️', val: getMutedStatVal(state.score/102, 15, 98), originalVal: Math.floor(state.originalScore/102) },
+        { name: '애프터 확률 💌', val: getMutedStatVal(state.score/96, 20, 99), originalVal: Math.floor(state.originalScore/96) },
+        { name: '데이트 생존 🧬', val: getMutedStatVal(state.score/98, 20, 99), originalVal: Math.floor(state.originalScore/98) }
       ],
       '출근': [
-        { name: '부장님 눈총 지수 😒', val: getMutedStatVal(105 - (state.score/98), 10, 95), originalVal: Math.floor(105 - (state.originalScore/98)) },
-        { name: '프로페셔널 지수 💼', val: getMutedStatVal(state.score/100, 20, 98), originalVal: Math.floor(state.originalScore/100) },
-        { name: '활동성 방해율 🏃', val: getMutedStatVal(100 - (state.score/110), 15, 90), originalVal: Math.floor(100 - (state.originalScore/110)) },
-        { name: '퇴근 본능 자극도 ⏰', val: getMutedStatVal(40 + (state.score/200), 20, 98), originalVal: Math.floor(40 + (state.originalScore/200)) },
-        { name: '평판 수호 지수 🛡️', val: getMutedStatVal(state.score/100 + 5, 30, 99), originalVal: Math.floor(state.originalScore/100 + 5) }
+        { name: '부장님 방어 🛡️', val: getMutedStatVal(state.score/98, 20, 99), originalVal: Math.floor(state.originalScore/98) },
+        { name: '프로 지수 💼', val: getMutedStatVal(state.score/100, 20, 98), originalVal: Math.floor(state.originalScore/100) },
+        { name: '업무 쾌적도 ⚡', val: getMutedStatVal(state.score/105, 20, 98), originalVal: Math.floor(state.originalScore/105) },
+        { name: '퇴근 칼퇴력 ⏰', val: getMutedStatVal(40 + (state.score/200), 20, 98), originalVal: Math.floor(40 + (state.originalScore/200)) },
+        { name: '평판 수호력 🛡️', val: getMutedStatVal(state.score/100 + 5, 30, 99), originalVal: Math.floor(state.originalScore/100 + 5) }
       ],
       '운동': [
-        { name: '헬창 아우라 지수 🏋️', val: getMutedStatVal(state.score/100, 15, 98), originalVal: Math.floor(state.originalScore/100) },
-        { name: '거울 셀카 득표율 📸', val: getMutedStatVal(state.score/95, 10, 99), originalVal: Math.floor(state.originalScore/95) },
-        { name: '땀 배출 지연도 💦', val: getMutedStatVal(100 - (state.score/105), 10, 90), originalVal: Math.floor(100 - (state.originalScore/105)) },
-        { name: '신체 보정 치트 📐', val: getMutedStatVal(state.score/100 + 8, 25, 99), originalVal: Math.floor(state.originalScore/100 + 8) },
-        { name: '근손실 위장도 🧬', val: getMutedStatVal(state.score/98, 30, 98), originalVal: Math.floor(state.originalScore/98) }
+        { name: '헬창 아우라 🏋️', val: getMutedStatVal(state.score/100, 15, 98), originalVal: Math.floor(state.originalScore/100) },
+        { name: '거울셀카 득표 📸', val: getMutedStatVal(state.score/95, 10, 99), originalVal: Math.floor(state.originalScore/95) },
+        { name: '통풍 쾌적도 🌬️', val: getMutedStatVal(state.score/102, 20, 98), originalVal: Math.floor(state.originalScore/102) },
+        { name: '신체 보정 📐', val: getMutedStatVal(state.score/100 + 8, 25, 99), originalVal: Math.floor(state.originalScore/100 + 8) },
+        { name: '근육 아우라 🧬', val: getMutedStatVal(state.score/98, 30, 98), originalVal: Math.floor(state.originalScore/98) }
       ],
       '하객': [
-        { name: '신부 저격 민폐도 🏹', val: getMutedStatVal(100 - (state.score/100), 5, 95), originalVal: Math.floor(100 - (state.originalScore/100)) },
-        { name: '하객 격식 비율 🤝', val: getMutedStatVal(state.score/98, 30, 99), originalVal: Math.floor(state.originalScore/98) },
+        { name: '하객 예의 🕊️', val: getMutedStatVal(state.score/98, 25, 99), originalVal: Math.floor(state.originalScore/98) },
+        { name: '하객 격식 🤝', val: getMutedStatVal(state.score/98, 30, 99), originalVal: Math.floor(state.originalScore/98) },
         { name: '사진 생존율 📸', val: getMutedStatVal(state.score/102, 20, 98), originalVal: Math.floor(state.originalScore/102) },
-        { name: '피로연 프리패스 🍽️', val: getMutedStatVal(90 - (state.score/200), 40, 99), originalVal: Math.floor(90 - (state.originalScore/200)) },
-        { name: '친척 잔소리 실드 🛡️', val: getMutedStatVal(state.score/100 + 10, 20, 99), originalVal: Math.floor(state.originalScore/100 + 10) }
+        { name: '피로연 프리 🍽️', val: getMutedStatVal(state.score/105, 30, 99), originalVal: Math.floor(state.originalScore/105) },
+        { name: '잔소리 방어 🛡️', val: getMutedStatVal(state.score/100 + 10, 20, 99), originalVal: Math.floor(state.originalScore/100 + 10) }
       ]
     };
     state.stats = statsMapping[tpo] || statsMapping['일상'];
@@ -1491,16 +1493,16 @@ function renderVibeStats() {
       document.querySelectorAll('.stat-desc-container').forEach(el => el.classList.add('hidden'));
       
       if (isHidden) {
-        const descText = statDescriptions[stat.name] || "상세 설명 정보가 없습니다.";
+        const aiDesc = state.apiData?.statsDetails?.[stat.name];
+        const descText = aiDesc || statDescriptions[stat.name] || "상세 설명 정보가 없습니다.";
+        const iconPrefix = aiDesc ? '✨ ' : '💬 ';
         descContainer.innerHTML = `
           <div class="text-[10px] font-bold bg-cream border-[2px] border-black p-2 mt-1 shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] text-black rotate-[-0.5deg]">
-            💬 ${descText}
+            ${iconPrefix}${descText}
           </div>
         `;
         descContainer.classList.remove('hidden');
         playSound('select');
-      } else {
-        descContainer.classList.add('hidden');
       }
     });
     
